@@ -3,7 +3,6 @@ import numpy as np
 from scipy.optimize import minimize
 from matrices import Matrix3, Matrix2
 
-
 #modified minvo to work with t from 0 to 1 like most other splines
 minvo3 = np.array([
     [-3.4416, 6.9896, -4.46236, 0.91439], 
@@ -21,12 +20,12 @@ minvo2 = np.array([
 
 minvo2inv = np.linalg.inv(minvo2)
 
-def optimize_spline(Q, planes, goal, r, vmax, amax, knots):
+def optimize_spline(Q, all_planes, goal, r, vmax, amax, knots):
     # `Q` is the array of control points of shape (n+1, ndim)
     # `planes` is an array of shape (num_intervals, ndim+1) containing the normal vectors and distances for each interval
     # `r` is the maximum allowable distance from the starting point
     p = 3
-    num_intervals = len(planes)
+    num_intervals = len(all_planes[0])
     ndim = Q.shape[1]
     fixed_points = Q[:3]
     starting_point = Q[0]
@@ -54,19 +53,28 @@ def optimize_spline(Q, planes, goal, r, vmax, amax, knots):
 
     # Vectorized Plane constraints
     def plane_constraints(x):
-        x_reshaped = x.reshape(-1, ndim)
-        Q_opt = np.vstack([fixed_points, x_reshaped, np.tile(x_reshaped[-1], (2, 1))])
+        return_value = np.empty((0,num_intervals))
+        # print(f"empty {return_value=}")
+        for planes in all_planes:
+            # print(planes.shape)
+            x_reshaped = x.reshape(-1, ndim)
+            Q_opt = np.vstack([fixed_points, x_reshaped, np.tile(x_reshaped[-1], (2, 1))])
+            
+            # Extract the control points for each interval. We use minvo control points here
+            Qmv_intervals = np.array([minvo3inv@Matrix3(j,knots)@Q_opt[j:j+4] for j in range(num_intervals)])
+            # print(Qmv_intervals.shape)
+            
+            # Apply the plane constraints
+            n = planes[:, :-1]
+            d = planes[:, -1]
+            plane_dots = np.einsum('ijk,ik->ij', Qmv_intervals, n) + d[:, None]
+            # print(f"{np.min(-plane_dots, axis=1)=}")
+            # print(f"{np.min(-plane_dots, axis=1).shape=}")
+            # print(f"{return_value.shape=}")
+            return_value = np.vstack((return_value, np.min(-plane_dots, axis=1)))
+        # print(f"final {return_value=}")
+        return return_value.flatten()
         
-        # Extract the control points for each interval. We use minvo control points here
-        Qmv_intervals = np.array([minvo3inv@Matrix3(j,knots)@Q_opt[j:j+4] for j in range(num_intervals)])
-        # print(Qmv_intervals.shape)
-        
-        # Apply the plane constraints
-        n = planes[:, :-1]
-        d = planes[:, -1]
-        plane_dots = np.einsum('ijk,ik->ij', Qmv_intervals, n) + d[:, None]
-        # print(f"{np.min(-plane_dots, axis=1)=}")
-        return np.min(-plane_dots, axis=1)
     
     constraints.append({'type': 'ineq', 'fun': plane_constraints})
 
@@ -117,7 +125,8 @@ def optimize_spline(Q, planes, goal, r, vmax, amax, knots):
     initial_guess = Q[3:-2].flatten()
 
     # Define the options with max iterations
-    options = {'maxiter': 10}
+    options = {'maxiter': 15}
+    # options = {}
 
     # Perform the optimization
     result = minimize(objective, initial_guess, constraints=constraints, method='SLSQP', options=options)

@@ -182,15 +182,19 @@ def collect_positions(point, depth:int):
         depth -= 1
     return np.vstack(positions)[::-1]
 
-def collect_planes(point, depth:int):
+def collect_planes(point, depth: int):
     planes = []
     current = point
     while depth > 0 and current is not None:
-        # print(current.plane)
-        planes.append(current.plane)
+        planes.append(np.array(current.planes))
         current = current.prev
         depth -= 1
-    return np.vstack(planes)[::-1]
+
+    # Stack the planes along the second axis to have shape (num_obstacles, num_intervals, ndim+1)
+    stacked_planes = np.stack(planes, axis=1)
+
+    # Reverse the order to match the original desired outcome
+    return stacked_planes[:,::-1,:]
 
 
 if __name__ == '__main__':
